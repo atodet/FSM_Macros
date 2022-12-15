@@ -1,0 +1,208 @@
+!start M1
+===============================================================================
+===============================================================================
+<<- INITIALISE VARIABLES ->>
+===============================================================================
+===============================================================================
+#change this to import files in a sub-directory (e.g. setting $path# to csv would
+#import files from a directory .\csv\)
+!let $path# = .
+!let $num# = 8
+#this is the name of the csv to import (with out the extension)
+#!let $file# = collar
+#!gosub new
+!let $file# = dom1_sims
+!gosub new
+!let $file# = dom2_sims
+!gosub new
+!let $file# = dom3_sims
+!gosub new
+!let $file# = dom5_sims
+!gosub new
+
+
+
+!goto end
+===============================================================================
+===============================================================================
+#BODY 
+===============================================================================
+===============================================================================
+!new:rem
+
+!gosub Get_Head
+
+!gosub Get_Data
+
+!gosub Tidy
+
+!return
+
+===============================================================================
+===============================================================================
+SUB-ROUTINES
+===============================================================================
+===============================================================================
+
+===============================================================================
+<<- Import Header ->>
+===============================================================================
+!Get_Head:rem import first line as header
+    
+    #create a batch script to count the number of fields
+    #this is a simple script that runs under Windows cmd (i.e. a batch file)
+    #it selects the first record in the file, counts the number of characters
+    #removes commas (,) and re-counts the number of characters. The difference
+    #in length (plus 1) is the numnber of fields in the file
+    
+    !inputc &out(__s_count_fld)
+    
+    @echo off
+    setlocal
+    findstr /n . .\$path#\$file#.csv | findstr ^^1: > head.txt  
+    set /p myString=<head.txt
+    set newString=%myString:,=%
+    call :strlen fullLeng myString
+    call :strlen subLeng newString
+    set /a numField=(fullLeng-subLeng+1)
+    echo %numField% > num.txt
+    goto :eof
+    :strlen <resultVar> <stringVar>
+    (   
+        setlocal EnableDelayedExpansion
+        set "s=!%~2!#"
+        set "len=0"
+        for %%P in (4096 2048 1024 512 256 128 64 32 16 8 4 2 1) do (
+            if "!s:~%%P,1!" NEQ "" ( 
+                set /a "len+=%%P"
+                set "s=!s:~%%P!"
+            )
+        )
+    )
+    ( 
+        endlocal
+        set "%~1=%len%"
+        exit /b
+    )
+    !
+
+    #save the script to a batch file
+    !output &in(__s_count_fld),@csv=1,@nodd=1
+    s_count_fld.bat
+    
+    #read the number of fields using the script
+    !opsys
+    s_count_fld.bat
+    exit
+    
+    #read the number of fields 
+    !inpfil &out(__num_fld)
+    Number of fields to import
+    NUM_FLD n y -
+]
+y
+num.txt
+
+    #import the header for field names - make fields 1 to num.txt for import
+    !field $exist# = __num_fld,$rec#=1,$num_field# = NUM_FLD
+    
+    !let $field_count# = 0
+    !top_fld_loop:rem top of loop for constructing field import list
+        !let $field_count# = {int($field_count# + 1)}
+        !if $field_count# > $num_field#, goto end_fld_loop
+        !if $field_count# = 1, then
+            !INPUTD   &OUT(__fld_head)
+            List of Fields
+            Field$field_count# A $num# y xx
+            ]
+            y
+        !else
+            !adddd &in(__fld_head),&out(__t1)
+            List of Fields
+            Field$field_count# a $num# y xx
+            ]
+            y
+            !copy &in(__t1),&out(__fld_head)
+        !endif
+
+        !goto top_fld_loop
+    
+    !end_fld_loop:rem end of loop for field names
+
+!return
+
+===============================================================================
+===============================================================================
+
+===============================================================================
+<<- Import the Data ->>
+===============================================================================
+!Get_Data:rem import the data using the number of fields defined
+
+    #import everything as text (note max width = 20 characters per field)
+    !indata &in(__fld_head),&out(__raw_data)
+    .\$path#\$file#.csv
+    
+    #values in the first record are used as field names
+    #grab the second record and use to determine if text or numeric
+    !copynr &in(__raw_data),&out(__recnum)
+    !picrec &in(__recnum),&out(__rec2)
+    RECORDNO = 2 end
+    !picrec &in(__recnum),&out(__no_header)
+    RECORDNO > 1 end
+    
+    #now do the decoding based on the first 2 records
+    !field $exist# = __num_fld,$rec#=1,$num_field# = NUM_FLD
+    !let $field_count# = 0
+    !top_decode_loop:rem top of loop for decoding raw data
+        !let $field_count# = {int($field_count# +1)}
+        !if $field_count# > $num_field#, goto end_decode_loop
+        !field $exist# = __raw_data,$rec#=1,$name# = Field$field_count#
+        !extra &in(__rec2),&out(__fld_type)
+        test = match(Field$field_count#,"[a-z]") + 
+               match(Field$field_count#,"[A-Z]")
+        go
+        !field $exist# = __fld_type,$rec#=1,$test#=test
+        
+        !if $test# = 0,then
+            !extra &in(__no_header),&out(__decoded)
+              $name# = decode(Field$field_count#)
+              erase(Field$field_count#)              
+            go
+        !else
+            !extra &in(__no_header),&out(__decoded)
+              $name#;a$num# = Field$field_count#
+              erase(Field$field_count#)
+            go
+        !endif
+        
+        !copy &in(__decoded),&out(__no_header)
+    
+        !goto top_decode_loop
+    !end_decode_loop:rem end of decoding
+    
+    !extra &in(__no_header),&out($file#)
+    erase(RECORDNO)
+    go
+    
+!return
+
+#==============================================================================
+#==============================================================================
+<<- Tidy and remove temporary files (__*.dm) and system files created
+#==============================================================================
+!Tidy:rem catalogue file delete
+
+!ld &out(__del),__?
+!delete &in(__del)
+!opsys
+del num.txt
+del head.txt
+del s_count_fld.bat
+exit
+
+!return
+
+#==============================================================================
+#==============================================================================
+!end:end
